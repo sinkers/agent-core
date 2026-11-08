@@ -1,0 +1,7 @@
+{
+  "name": "agent-skills",
+  "version": "0.1.0",
+  "description": "Skills for AI team agents and the people working with them: documents, reviews, Jira, plans, construction delivery and cost control, escalation, figures. Organisation-neutral; a deployment adds its own rules with `extends: core` skills.",
+  "license": "MIT",
+  "author": {"name": "Andrew Sinclair"}
+}

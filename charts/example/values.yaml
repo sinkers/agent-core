@@ -1,0 +1,55 @@
+# An example: one agent, Ada, on your image (FROM agent-core, with agents/ada/agent.yaml and prompts in it).
+# Secrets are never set here: Ada reads Secret `agent-ada` (DB_PASSWORD, INTERNAL_API_TOKEN, AWS keys, ...).
+global:
+  agents: [ada]
+  partOf: acme-agents
+  labelDomain: acme.example
+  awsRegion: us-east-1
+  image:
+    repository: ghcr.io/acme/acme-agents
+    tag: 0.1.0
+    pullPolicy: IfNotPresent
+  environment: dev
+  killswitchConfigMap: agents-killswitch
+  ownerAadId: ""
+  openclawMcpUrl: ""
+  otlpEndpoint: ""
+  debug:
+    cognitoPoolId: ""
+    cognitoClientId: ""   # empty: the debug stream is off
+    viewers: ""
+    origins: ""
+  ingress:
+    enabled: true
+    className: traefik
+    host: ""
+
+killswitch:
+  ada: run
+
+postgres:
+  enabled: true
+  image: postgres:17-alpine
+  storage: 10Gi
+  storageClass: ""
+  adminSecret: agents-postgres-admin
+
+hindsight:
+  enabled: false
+
+searxng:
+  enabled: true
+  image: searxng/searxng:2026.10.2-19ffbcd30
+
+mcpServers:
+  - name: jira-ada
+    enabled: true
+    owner: ada
+    module: agentcore_mcp_jira.server
+    env:
+      JIRA_CLOUD_ID: "<your Atlassian cloud id>"
+      JIRA_SITE_URL: https://acme.atlassian.net
+
+ada:
+  enabled: true
+  agentName: ada

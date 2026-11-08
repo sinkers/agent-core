@@ -1,0 +1,41 @@
+# A Probe worker's sandbox: Bedrock in ap-southeast-2 (the proxy re-signs each call with the aws-agents provider's
+# keys; the sandbox has placeholders only), the front door's work API, and its memory through memory-proxy (its
+# token is injected by the proxy, as for Bedrock). Nothing else: no database, no internet,
+# no Kubernetes API.
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only: [/bin, /usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: hard_requirement
+network_policies:
+  bedrock:
+    name: bedrock-converse
+    endpoints:
+      - host: bedrock-runtime.ap-southeast-2.amazonaws.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        credential_binding: {provider: aws-agents}
+        credential_signing: sigv4
+        signing_service: bedrock
+        rules:
+          - allow: {method: POST, path: "/model/*/converse"}
+          - allow: {method: POST, path: "/model/*/converse-stream"}
+    binaries:
+      - {path: /usr/local/bin/python3.12}
+  workapi:
+    name: frontdoor-work-api
+    endpoints:
+      - host: frontdoor.agents.svc.cluster.local
+        port: 8080
+        protocol: rest
+        enforcement: enforce
+        allowed_ips: [10.43.0.0/16]  # k3s's service range: the name may resolve only to a Service address
+        rules:
+          - allow: {method: POST, path: "/v1/worker/**"}
+    binaries:
+      - {path: /usr/local/bin/python3.12}
+# Memory: memory-proxy is reached through the memory-probe provider's own endpoint (providers/agentcore-memory.yaml);
+# declaring it here as well is rejected by OpenShell as ambiguous. memory-proxy enforces the route allow-list.

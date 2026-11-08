@@ -1,0 +1,6 @@
+bin/
+obj/
+out/
+*.zip
+appsettings.Development.json
+appsettings.Production.json

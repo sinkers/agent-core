@@ -1,0 +1,92 @@
+name: ci
+
+# CI for agent-core. Jobs run on GitHub-hosted runners unless the repository variable CI_RUNNER names a self-hosted
+# runner set. This repository is public and uses one, so pull requests from forks must not reach it:
+#   1. The `if` on each job skips fork pull requests. That alone is not enough, because a fork's pull request runs the
+#      workflow as the fork changed it.
+#   2. So the repository setting "Require approval for all external contributors" is on, and no outside contributor's
+#      run is approved without reading its changes to .github/. Check it with:
+#        gh api repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    services:
+      postgres:  # the front door's tests are skipped without a database
+        image: postgres:17-alpine
+        env: {POSTGRES_PASSWORD: test}
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --extra test
+      - run: uv run pytest -q
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:test@127.0.0.1:55432/postgres
+
+  chart:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm dependency update charts/example
+      - run: helm lint charts/example
+      - run: helm template agents charts/example -n agents > /dev/null
+
+  bridge:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet  # self-hosted runners can't write /usr/share/dotnet
+      - run: dotnet test teams-media-bridge/tests/TeamsMediaBridge.Tests
+      - run: dotnet build teams-media-bridge/src/TeamsMediaBridge -c Release
+
+  image:
+    needs: [test]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/agent-core
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

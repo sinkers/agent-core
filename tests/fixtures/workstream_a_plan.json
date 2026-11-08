@@ -1,0 +1,31 @@
+{
+  "name": "Workstream A - Site Make Good (sample)",
+  "start": "2026-10-19",
+  "status_date": "2026-10-23",
+  "days_per_point": 1,
+  "non_working": [{"date": "2026-12-29", "name": "Christmas close-down"}, {"date": "2026-12-30", "name": "Christmas close-down"}, {"date": "2026-12-31", "name": "Christmas close-down"}],
+  "resources": [
+    {"id": "sam", "name": "Sam Taylor", "email": "Sam.Taylor@acme.example", "role": "Project lead", "leave": [{"from": "2026-11-09", "to": "2026-11-13"}]},
+    {"id": "david", "name": "David Hillier", "role": "Electrical engineer", "max_units": 0.5},
+    {"id": "cam", "name": "Cam Nelson", "role": "Approver"},
+    {"id": "crew", "name": "Site crew", "role": "Contractor", "max_units": 2}
+  ],
+  "tasks": [
+    {"id": "s0", "name": "Plan and approvals"},
+    {"id": "t01", "name": "Finalise 1P dismantling plan Rev 1", "parent": "s0", "duration": 3, "resources": ["sam"], "jira": "PRJ-442", "percent_complete": 60, "baseline_start": "2026-10-19", "baseline_finish": "2026-10-21"},
+    {"id": "t02", "name": "Electrical isolation design review", "parent": "s0", "duration": 4, "resources": ["david"], "depends_on": ["t01"]},
+    {"id": "m01", "name": "Plan approved", "milestone": true, "parent": "s0", "depends_on": ["t02", {"id": "t03"}], "deadline": "2026-11-06"},
+    {"id": "t03", "name": "Approval review", "parent": "s0", "duration": 2, "resources": ["cam"], "depends_on": ["t01"]},
+    {"id": "s1", "name": "Stage 1 - Top deck"},
+    {"id": "t11", "name": "Isolate and lock out top deck", "parent": "s1", "duration": 2, "resources": ["david", "crew"], "depends_on": ["m01"], "jira": "PRJ-364"},
+    {"id": "t12", "name": "Clean, pack and move miners (top deck)", "parent": "s1", "story_points": 8, "resources": [{"id": "crew", "units": 2}], "depends_on": ["t11"]},
+    {"id": "t13", "name": "Remove PDUs and cabling", "parent": "s1", "duration": 5, "resources": ["crew", "sam"], "depends_on": [{"id": "t11", "type": "SS", "lag": 2}]},
+    {"id": "t14", "name": "Truck to Exeter (booked)", "parent": "s1", "duration": 1, "start_no_earlier": "2026-11-23", "depends_on": ["t12"]},
+    {"id": "m11", "name": "Top deck clear", "milestone": true, "parent": "s1", "depends_on": ["t13", "t14"]},
+    {"id": "s2", "name": "Stage 2 - Isolation and draining"},
+    {"id": "t21", "name": "Drain cooling loop", "parent": "s2", "duration": 3, "resources": ["crew"], "depends_on": ["m11"]},
+    {"id": "t22", "name": "Remove pumps and pipework", "parent": "s2", "duration": 6, "resources": ["crew"], "depends_on": ["t21"]},
+    {"id": "t23", "name": "Contingency (stage tolerance)", "parent": "s2", "duration": 3, "depends_on": ["t22"], "notes": "PRINCE2 time tolerance, held by the project lead"},
+    {"id": "m21", "name": "Site handed back", "milestone": true, "depends_on": ["s2"], "deadline": "2027-01-15"}
+  ]
+}

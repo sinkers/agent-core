@@ -1,0 +1,68 @@
+{{- $secret := default (printf "agent-%s" .Values.agentName) .Values.secretName -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agent.name" . }}
+  labels: {{- include "agent.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: {{- include "agent.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "agent.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      # Turns in progress get time to finish on a deploy (agent drains up to 240 s; resume.py picks up the rest).
+      terminationGracePeriodSeconds: 300
+      serviceAccountName: {{ include "agent.name" . }}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: agent
+          image: "{{ .Values.global.image.repository }}:{{ .Values.global.image.tag }}"
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          ports: [{name: http, containerPort: 8080}]
+          envFrom:
+            - secretRef: {name: {{ $secret }}}
+          env:
+            - {name: AGENT_DIR, value: /app/agents/{{ .Values.agentName }}}
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.agentName }}:$(DB_PASSWORD)@agents-postgres:5432/{{ .Values.agentName }}"
+            - {name: AWS_REGION, value: {{ .Values.global.awsRegion | default "us-east-1" }}}
+            - {name: OWNER_AAD_ID, value: {{ .Values.global.ownerAadId | quote }}}
+            - {name: OPENCLAW_MCP_URL, value: {{ .Values.global.openclawMcpUrl | quote }}}
+            - {name: {{ .Values.global.environmentVar | default "AGENT_ENVIRONMENT" }}, value: {{ .Values.global.environment | quote }}}
+            - {name: HINDSIGHT_URL, value: "http://agents-hindsight:8888"}
+            {{- with .Values.global.debug }}
+            {{- if .cognitoClientId }}
+            - {name: DEBUG_COGNITO_POOL_ID, value: {{ .cognitoPoolId | quote }}}
+            - {name: DEBUG_COGNITO_CLIENT_ID, value: {{ .cognitoClientId | quote }}}
+            - {name: DEBUG_VIEWERS, value: {{ .viewers | quote }}}
+            - {name: DEBUG_ORIGINS, value: {{ .origins | quote }}}
+            {{- end }}
+            {{- end }}
+            {{- range $k, $v := .Values.extraEnv }}
+            - {name: {{ $k }}, value: {{ $v | quote }}}
+            {{- end }}
+            {{- with .Values.global.otlpEndpoint }}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: {{ . | quote }}}
+            {{- end }}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}

@@ -1,0 +1,8 @@
+# An example brand pack (brandpack.py) with no template files: documents are styled in code.
+name: Acme
+classification: Internal
+website: example.com
+table_style: ""
+palette: {ink: "222222", primary: "1F4E79", accent: "C55A11", muted: "7F7F7F", tint: "DEEAF6", page: "FFFFFF",
+          rule: "BFBFBF", rule_doc: "D9D9D9"}
+fonts: {heading: Cambria, body: Calibri, mono: Consolas}

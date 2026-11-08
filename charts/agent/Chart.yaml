@@ -1,0 +1,6 @@
+apiVersion: v2
+name: agent
+description: One AI agent on agent-core (a deployment's chart uses it once per agent, by alias)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

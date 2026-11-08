@@ -1,0 +1,159 @@
+# The front door for the scale-to-zero PoC (namespace agents). Applied by ../frontdoor.sh, which fills in
+# ${IMAGE} and creates the secrets (frontdoor-db, frontdoor-api, frontdoor-channels, openshell-client-tls).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agents
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: frontdoor, namespace: agents}
+---
+# The kill switch is the ConfigMap agents-killswitch: one key per agent, `stop` halts it (its workers are stopped,
+# nothing is delivered). frontdoor.sh creates it once and never applies it, so a deploy can't release a stopped agent.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: frontdoor-killswitch, namespace: agents}
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [agents-killswitch]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: frontdoor-killswitch, namespace: agents}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: frontdoor-killswitch}
+subjects: [{kind: ServiceAccount, name: frontdoor, namespace: agents}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: frontdoor-config, namespace: agents}
+data:
+  frontdoor.yaml: |
+    launcher: openshell
+    openshell:
+      endpoint: openshell.openshell.svc.cluster.local:8080
+      workspace: default
+      tls_dir: /etc/openshell-tls
+    worker_url: http://frontdoor.agents.svc.cluster.local:8080
+    limits:
+      max_workers: 20
+      attempts: 3
+      launch_failures: 3
+      lease_seconds: 60
+      start_timeout_seconds: 120
+      schedule_jitter_seconds: 10
+    # Workers started ahead of time with no agent, given one when work arrives: no sandbox start to wait for.
+    # A pool serves agents with its image, policy and providers (fixed when a sandbox is created).
+    pools:
+      bedrock-workapi:
+        size: 1
+        image: ${WORKER_IMAGE}
+        policy: /app/policies/probe-worker.yaml
+        providers: [aws-agents, memory-probe]   # memory-probe is Probe's own memory token...
+        only_for: [probe]                       # ...so this pool's workers can only ever become Probe
+    agents:
+      probe:
+        display_name: Probe
+        pool: bedrock-workapi
+        image: ${WORKER_IMAGE}
+        policy: /app/policies/probe-worker.yaml
+        providers: [aws-agents, memory-probe]
+        max_workers: 2
+        idle_seconds: 600
+        env: {IMAGE_TAG: "${TAG}", WORKER_TEST_HOOKS: "${WORKER_TEST_HOOKS}", AGENT_OWNER: "${PROBE_OWNER}",
+              HINDSIGHT_URL: "http://memory-proxy.memory.svc.cluster.local:8080"}
+        telegram: {token_env: TELEGRAM_BOT_TOKEN_PROBE}
+        voxhelm:
+          - name: voxhelm          # the PoC's own voice-gateway (frontdoor.sh voxhelm-up), no auth
+            url: ws://voice-gateway.voxhelm.svc.cluster.local:8080/ws
+            users: [poc-user]
+          - name: voxhelm-dev      # an external voice-gateway, from poc.env (gitignored); skipped when unset
+            url: "${VOXHELM_DEV_URL}"
+            agent_id: "${VOXHELM_DEV_AGENT_ID}"
+            users: [${VOXHELM_DEV_USER}]
+            token_env: VOXHELM_DEV_TOKEN_PROBE
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: frontdoor, namespace: agents, labels: {app: frontdoor}}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: frontdoor}}
+  template:
+    metadata:
+      labels: {app: frontdoor}
+      annotations: {config-hash: "${CONFIG_HASH}"}
+    spec:
+      serviceAccountName: frontdoor
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector: {matchLabels: {app: frontdoor}}
+              topologyKey: kubernetes.io/hostname
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: frontdoor
+          image: ${IMAGE}
+          command: [uvicorn, --factory, agentcore.frontdoor.app:app, --host, 0.0.0.0, --port, "8080", --no-access-log]
+          ports: [{containerPort: 8080, name: http}]
+          env:
+            - {name: FRONTDOOR_CONFIG, value: /etc/frontdoor/frontdoor.yaml}
+            - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: frontdoor-db, key: uri}}}
+            - {name: CLIENT_API_TOKEN, valueFrom: {secretKeyRef: {name: frontdoor-api, key: client}}}
+            - {name: ADMIN_API_TOKEN, valueFrom: {secretKeyRef: {name: frontdoor-api, key: admin}}}
+            - {name: ELEVENLABS_API_KEY, valueFrom: {secretKeyRef: {name: frontdoor-channels, key: elevenlabs, optional: true}}}
+            - {name: TELEGRAM_BOT_TOKEN_PROBE, valueFrom: {secretKeyRef: {name: frontdoor-channels, key: telegram-probe, optional: true}}}
+            - {name: VOXHELM_DEV_TOKEN_PROBE, valueFrom: {secretKeyRef: {name: frontdoor-channels, key: voxhelm-dev-probe, optional: true}}}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: config, mountPath: /etc/frontdoor}
+            - {name: openshell-tls, mountPath: /etc/openshell-tls}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: config, configMap: {name: frontdoor-config}}
+        - {name: openshell-tls, secret: {secretName: openshell-client-tls}}
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: frontdoor, namespace: agents}
+spec:
+  selector: {app: frontdoor}
+  ports: [{port: 8080, targetPort: http, name: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: frontdoor, namespace: agents}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: frontdoor}}
+---
+# The worker image on every node before any worker needs it: a cold pull took 48 s, an image already there ~0.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: worker-image-prepull, namespace: agents}
+spec:
+  selector: {matchLabels: {app: worker-image-prepull}}
+  template:
+    metadata:
+      labels: {app: worker-image-prepull}
+      annotations: {image: "${WORKER_IMAGE}"}
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 10001}
+      initContainers:
+        - name: pull
+          image: ${WORKER_IMAGE}
+          command: ["/bin/true"]
+          resources: {requests: {cpu: 1m, memory: 8Mi}}
+      containers:
+        - name: hold
+          image: registry.k8s.io/pause:3.10
+          resources: {requests: {cpu: 1m, memory: 4Mi}, limits: {memory: 8Mi}}

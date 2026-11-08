@@ -1,0 +1,225 @@
+# Shared, secure memory (docs/design/agent-core.md section 8): Hindsight on its own Postgres (pgvector, 2 instances),
+# reachable only through memory-proxy, which pins each agent's token to that agent's bank. Nightly encrypted backups.
+# Rendered by memory.sh (envsubst: PROXY_IMAGE, BACKUP_IMAGE, BUCKET).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: {name: memory-pg, namespace: memory}
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  enablePDB: true
+  affinity: {enablePodAntiAffinity: true, podAntiAffinityType: required, topologyKey: kubernetes.io/hostname}
+  storage: {size: 5Gi, storageClass: local-path}
+  resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {memory: 1Gi}}
+  bootstrap:
+    initdb:
+      database: hindsight
+      owner: hindsight
+      postInitApplicationSQL:
+        - CREATE EXTENSION IF NOT EXISTS vector
+        - CREATE EXTENSION IF NOT EXISTS pg_trgm
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: hindsight, namespace: memory, labels: {app: hindsight}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: hindsight}}
+  template:
+    metadata: {labels: {app: hindsight}}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: hindsight
+          image: ghcr.io/vectorize-io/hindsight:0.10.0
+          ports: [{containerPort: 8888, name: http}]
+          env:
+            - {name: HINDSIGHT_API_HOST, value: 0.0.0.0}
+            - {name: HINDSIGHT_API_PORT, value: "8888"}
+            - {name: HINDSIGHT_API_DATABASE_URL, valueFrom: {secretKeyRef: {name: memory-pg-app, key: uri}}}
+            - {name: HINDSIGHT_API_LLM_PROVIDER, value: bedrock}
+            - {name: HINDSIGHT_API_LLM_MODEL, value: au.anthropic.claude-haiku-4-5-20251001-v1:0}
+            - {name: AWS_REGION, value: ap-southeast-2}
+            - {name: AWS_DEFAULT_REGION, value: ap-southeast-2}
+            - {name: HINDSIGHT_API_TENANT_EXTENSION, value: "hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension"}
+            - {name: HINDSIGHT_API_MCP_ENABLED, value: "false"}
+            - {name: HINDSIGHT_API_ENABLE_FILE_UPLOAD_API, value: "false"}
+            - {name: HINDSIGHT_API_LOG_LEVEL, value: info}
+            - {name: HINDSIGHT_API_WORKER_ID, value: hindsight}   # stable: tasks in progress survive a restart
+          envFrom:
+            - secretRef: {name: hindsight-bedrock}
+            - secretRef: {name: hindsight-api-key}
+          resources: {requests: {cpu: 250m, memory: 1Gi}, limits: {memory: 3Gi}}
+          readinessProbe: {httpGet: {path: /health, port: 8888}, periodSeconds: 10, failureThreshold: 3}
+          livenessProbe: {httpGet: {path: /health, port: 8888}, initialDelaySeconds: 120, periodSeconds: 30}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: hindsight, namespace: memory}
+spec: {selector: {app: hindsight}, ports: [{port: 8888, targetPort: 8888, name: http}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: memory-proxy, namespace: memory, labels: {app: memory-proxy}}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: memory-proxy}}
+  template:
+    metadata: {labels: {app: memory-proxy}}
+    spec:
+      automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm: {topologyKey: kubernetes.io/hostname, labelSelector: {matchLabels: {app: memory-proxy}}}
+      containers:
+        - name: proxy
+          image: ${PROXY_IMAGE}
+          command: [uvicorn, --factory, agentcore.memproxy:app, --host, 0.0.0.0, --port, "8080", --no-access-log]
+          ports: [{containerPort: 8080, name: http}]
+          env:
+            - {name: MEMPROXY_UPSTREAM, value: "http://hindsight.memory.svc.cluster.local:8888"}
+          envFrom:
+            - secretRef: {name: memproxy-upstream}
+            - secretRef: {name: memproxy-grants}
+          resources: {requests: {cpu: 20m, memory: 64Mi}, limits: {memory: 256Mi}}
+          readinessProbe: {httpGet: {path: /healthz, port: 8080}, periodSeconds: 10}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: memory-proxy, namespace: memory}
+spec: {selector: {app: memory-proxy}, ports: [{port: 8080, targetPort: 8080, name: http}]}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: memory-proxy, namespace: memory}
+spec: {minAvailable: 1, selector: {matchLabels: {app: memory-proxy}}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: memory-backup, namespace: memory}
+spec:
+  schedule: "17 16 * * *"   # 02:17 AEST
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata: {labels: {app: memory-backup}}
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          containers:
+            - name: backup
+              image: ${BACKUP_IMAGE}
+              args:
+                - |
+                  set -eu -o pipefail
+                  # a new pod's network policy takes a few seconds to apply: wait for the database first
+                  for i in $(seq 1 30); do nc -z -w 2 memory-pg-rw.memory 5432 && break; sleep 2; done
+                  f="memory-pg/hindsight-$(date -u +%Y%m%dT%H%M%SZ).dump.age"
+                  pg_dump --format=custom --no-owner "$DATABASE_URL" | age -r "$RECIPIENT" \
+                    | aws s3 cp --only-show-errors --sse AES256 - "s3://${BUCKET}/$f"
+                  echo "backed up to $f"
+              env:
+                - {name: BUCKET, value: "${BUCKET}"}
+                - {name: AWS_REGION, value: ap-southeast-2}
+                - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: memory-pg-app, key: uri}}}
+                - {name: RECIPIENT, valueFrom: {configMapKeyRef: {name: memory-backup-recipient, key: recipient}}}
+              envFrom: [{secretRef: {name: memory-backup-aws}}]
+              resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {memory: 512Mi}}
+              securityContext: {runAsNonRoot: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+# --- network policy: nothing in, except as listed ---------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: memory}
+spec: {podSelector: {}, policyTypes: [Ingress, Egress]}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: dns, namespace: memory}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}}]
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+---
+# memory-proxy: from agent workers (OpenShell sandboxes and supervisors) and the front door; to Hindsight only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: memory-proxy, namespace: memory}
+spec:
+  podSelector: {matchLabels: {app: memory-proxy}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: sandboxes}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: openshell}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: agents}}
+      ports: [{port: 8080}]
+  egress:
+    - to: [{podSelector: {matchLabels: {app: hindsight}}}]
+      ports: [{port: 8888}]
+---
+# Hindsight: from memory-proxy only; to its Postgres and to Bedrock (HTTPS outside the cluster)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: hindsight, namespace: memory}
+spec:
+  podSelector: {matchLabels: {app: hindsight}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: memory-proxy}}}]
+      ports: [{port: 8888}]
+  egress:
+    - to: [{podSelector: {matchLabels: {cnpg.io/cluster: memory-pg}}}]
+      ports: [{port: 5432}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]}}]
+      ports: [{port: 443}]
+---
+# Postgres: from Hindsight, the backup job, its own instances and the CloudNativePG operator
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: memory-pg, namespace: memory}
+spec:
+  podSelector: {matchLabels: {cnpg.io/cluster: memory-pg}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app: hindsight}}
+        - podSelector: {matchLabels: {app: memory-backup}}
+        - podSelector: {matchLabels: {cnpg.io/cluster: memory-pg}}
+      ports: [{port: 5432}]
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cnpg-system}}}]
+      ports: [{port: 8000}, {port: 5432}]
+  egress:
+    - to: [{podSelector: {matchLabels: {cnpg.io/cluster: memory-pg}}}]
+      ports: [{port: 5432}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0}}]   # the Kubernetes API (operator status); no other egress is used
+      ports: [{port: 6443}, {port: 443}]
+---
+# Backup job: to Postgres and to S3 (HTTPS outside the cluster)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: memory-backup, namespace: memory}
+spec:
+  podSelector: {matchLabels: {app: memory-backup}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{podSelector: {matchLabels: {cnpg.io/cluster: memory-pg}}}]
+      ports: [{port: 5432}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]}}]
+      ports: [{port: 443}]

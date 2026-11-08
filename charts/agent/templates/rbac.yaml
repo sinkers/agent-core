@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "agent.name" . }}
+  labels: {{- include "agent.labels" . | nindent 4 }}
+---
+# The agent may read the kill switch and nothing else in the cluster (SEC-004).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "agent.name" . }}-killswitch-read
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [{{ .Values.global.killswitchConfigMap }}]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "agent.name" . }}-killswitch-read
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ include "agent.name" . }}-killswitch-read}
+subjects:
+  - {kind: ServiceAccount, name: {{ include "agent.name" . }}, namespace: {{ .Release.Namespace }}}

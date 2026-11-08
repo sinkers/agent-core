@@ -1,0 +1,27 @@
+# OpenShell gateway for the scale-to-zero PoC: 2 replicas on the shared Postgres, sandboxes in their own namespace.
+replicaCount: 2
+workload:
+  kind: deployment
+server:
+  externalDbSecret: openshell-db
+  telemetryEnabled: false
+  sandboxNamespace: sandboxes
+  workspaceDefaultStorageSize: 1Gi
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: openshell, app.kubernetes.io/instance: openshell}
+# Shared supervisor (experimental in 0.1.6): one supervisor pool for all sandboxes instead of a supervisor pod per
+# sandbox, so a new sandbox doesn't wait for its own supervisor to start. Two members, so losing one hands its
+# sandboxes to the other without restarting them.
+gatewayConfig:
+  openshell:
+    version: 2
+  openshell.drivers.kubernetes:
+    supervisor_topology: gateway
+supervisor:
+  replicas: 2

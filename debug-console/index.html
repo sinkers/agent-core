@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Debug Console</title>
+<!--
+  Live debug console for the AI team agents. Which agents it shows comes from config.json beside this page
+  ({"agents": [{"id", "name", "color"?, "dark"?}], "admin": "who adds viewers"}), or ?agents=id1,id2.
+  Each agent streams over wss://<this host>/<agent>/debug/ws (the agent checks the sign-in cookie and its
+  viewer list). Server side: agentcore/debug.py.
+-->
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #18202b; --muted: #637083; --line: #e2e6ec; --soft: #eef1f5;
+  --blue: #1B4B8A; --orange: #F5A623; --ok: #1f8a4c; --warn: #b7791f; --err: #c53030; --code: #f3f5f8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1318; --panel: #161b22; --ink: #e6edf3; --muted: #8b98a8; --line: #2a313b; --soft: #1d242d;
+    --blue: #6ea8ff; --ok: #4cc38a; --warn: #e3b341; --err: #ff7b72; --code: #0d1117;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1318; --panel: #161b22; --ink: #e6edf3; --muted: #8b98a8; --line: #2a313b; --soft: #1d242d;
+  --blue: #6ea8ff; --ok: #4cc38a; --warn: #e3b341; --err: #ff7b72; --code: #0d1117;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+h1 { font-size: 16px; margin: 0; white-space: nowrap; }
+h1 span { color: var(--orange); }
+.conns { display: flex; gap: 8px; flex-wrap: wrap; }
+.conn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px;
+  padding: 3px 10px 3px 8px; cursor: pointer; user-select: none; background: var(--panel); color: var(--ink); font: inherit; }
+.conn.off { opacity: .45; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.conn[data-status="live"] .dot { background: var(--ok); }
+.conn[data-status="connecting"] .dot, .conn[data-status="reconnecting"] .dot { background: var(--warn); }
+.conn[data-status="refused"] .dot { background: var(--err); }
+.conn small { color: var(--muted); }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-left: auto; }
+.toolbar input[type=search] { min-width: 180px; flex: 1; padding: 5px 9px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+.toolbar select, .toolbar button { padding: 5px 9px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel); color: var(--ink); font: inherit; cursor: pointer; }
+.toolbar button.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+.toolbar label { color: var(--muted); display: inline-flex; gap: 4px; align-items: center; }
+main { padding: 12px 16px 60px; max-width: 1200px; margin: 0 auto; }
+.banner { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+  margin-bottom: 10px; color: var(--muted); }
+.banner b { color: var(--ink); }
+.newer { position: sticky; top: 64px; z-index: 4; display: none; margin: 0 auto 8px; padding: 6px 14px;
+  border-radius: 999px; border: 0; background: var(--orange); color: #222; font: inherit; cursor: pointer; }
+.empty { text-align: center; color: var(--muted); padding: 40px 0; }
+details > summary { list-style: none; cursor: pointer; }
+details > summary::-webkit-details-marker { display: none; }
+.turn { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--agent, var(--blue));
+  border-radius: 8px; margin-bottom: 8px; }
+.turn > summary { padding: 9px 12px; display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: baseline; }
+.turn[open] > summary { border-bottom: 1px solid var(--line); }
+.chev { color: var(--muted); transition: transform .15s; display: inline-block; width: 1em; }
+details[open] > summary .chev { transform: rotate(90deg); }
+.who { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who .msg { font-weight: 400; color: var(--ink); }
+.meta { color: var(--muted); font-size: 12px; white-space: nowrap; text-align: right; }
+.line2 { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; min-width: 0; }
+.sum { grid-column: 2 / 4; color: var(--muted); font-size: 13px; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.chip { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--soft); color: var(--ink);
+  border: 1px solid var(--line); white-space: nowrap; }
+.chip.agent { background: var(--agent); color: #fff; border-color: transparent; }
+.chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); } .chip.err { color: var(--err); border-color: var(--err); }
+.chip.busy::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--warn); margin-right: 5px; animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: .2; } }
+.steps { padding: 6px 8px 10px 22px; }
+.step { border-left: 2px solid var(--line); margin-left: 6px; }
+.step > summary { padding: 4px 8px; display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.step > summary:hover { background: var(--soft); }
+.step .ico { width: 1.3em; text-align: center; flex: none; }
+.step .t { color: var(--muted); font-size: 11.5px; flex: none; font-variant-numeric: tabular-nums; }
+.step .s { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step[open] > summary .s { white-space: normal; }
+.step.log > summary { font-size: 12.5px; color: var(--muted); }
+.step.lvl-WARNING > summary .s { color: var(--warn); } .step.lvl-ERROR > summary .s, .step.bad > summary .s { color: var(--err); }
+.body { padding: 4px 10px 10px 34px; }
+.body h4 { margin: 8px 0 4px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+pre { margin: 0; padding: 8px 10px; background: var(--code); border: 1px solid var(--line); border-radius: 6px;
+  white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  max-height: 480px; overflow: auto; }
+.thought { border-left: 3px solid var(--orange); }
+.loose { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; }
+.loose > summary { padding: 6px 12px; color: var(--muted); font-size: 12.5px; display: flex; gap: 8px; align-items: baseline; }
+.loose .steps { padding-top: 0; }
+[hidden] { display: none !important; }
+@media (max-width: 640px) {
+  header { padding: 8px 12px; } main { padding: 10px 12px 60px; }
+  .toolbar { margin-left: 0; width: 100%; }
+  .turn > summary { grid-template-columns: auto 1fr; }
+  .meta { grid-column: 2; text-align: left; }
+  .steps { padding-left: 6px; } .body { padding-left: 12px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent debug <span>●</span></h1>
+  <div class="conns" id="conns"></div>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="Search text, people, tools…" aria-label="Search">
+    <select id="show" aria-label="Show">
+      <option value="all">Turns and logs</option>
+      <option value="turns">Turns only</option>
+      <option value="problems">Problems only</option>
+    </select>
+    <select id="level" aria-label="Log level">
+      <option value="INFO">Logs: info+</option>
+      <option value="WARNING">Logs: warnings+</option>
+      <option value="ERROR">Logs: errors</option>
+    </select>
+    <button id="pause" title="Hold new items (they queue)">Pause</button>
+    <button id="collapse" title="Close everything">Collapse</button>
+    <button id="theme" title="Light / dark">◐</button>
+  </div>
+</header>
+<main>
+  <div class="banner" id="banner" hidden></div>
+  <button class="newer" id="newer"></button>
+  <div id="list"></div>
+  <div class="empty" id="empty">Waiting for activity… Message an agent in Teams to see its turn appear here.</div>
+</main>
+<script>
+"use strict";
+let AGENTS = [];  // from config.json (loadConfig)
+let ADMIN = "the agents' administrator";
+const MAX_ITEMS = 1500;
+const LEVELS = { DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3, CRITICAL: 4 };
+const CHANNEL_ICON = { chat: "💬", voice: "📞", email: "✉️", schedule: "⏰" };
+
+const st = {
+  conns: {}, enabled: new Set(), items: new Map(), order: [], seen: new Set(),
+  paused: false, queued: [], q: "", show: "all", level: "INFO",
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const cut = (s, n) => { s = String(s ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+const time = ts => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const secs = ms => ms == null ? "" : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+const money = c => c == null ? "" : c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(3)}`;
+const tok = n => n == null ? "?" : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+const toolName = n => String(n || "").replace("__", ".");
+const pretty = v => { if (typeof v === "string") { try { return JSON.stringify(JSON.parse(v), null, 2); } catch { return v; } }
+  return JSON.stringify(v, null, 2); };
+function modelName(id) {
+  const s = String(id || "").toLowerCase();
+  const m = s.match(/(haiku|sonnet|opus|fable)[-_.]?(\d+(?:[-.]\d+)?)?/);
+  if (m) return m[1][0].toUpperCase() + m[1].slice(1) + (m[2] ? " " + m[2].replace("-", ".") : "");
+  if (s.includes("gpt")) return (s.match(/gpt[-\w.]*/) || ["GPT"])[0];
+  return s.split(/[.:/]/).filter(Boolean).slice(-2, -1)[0] || id || "model";
+}
+const agentColor = id => `var(--agent-${id}, var(--blue))`;
+
+// ---------- connections ----------
+function renderConns() {
+  $("conns").innerHTML = AGENTS.map(a => {
+    const c = st.conns[a.id] || {};
+    const turns = st.order.filter(k => st.items.get(k)?.agent === a.id && st.items.get(k)?.type === "turn").length;
+    return `<button class="conn ${st.enabled.has(a.id) ? "" : "off"}" data-agent="${a.id}" data-status="${c.status || "connecting"}"
+      title="${esc(c.note || "")} — click to show or hide"><span class="dot"></span>${a.name}<small>${esc(c.label || "…")}${turns ? " · " + turns : ""}</small></button>`;
+  }).join("");
+}
+$("conns").addEventListener("click", e => {
+  const b = e.target.closest(".conn"); if (!b) return;
+  const id = b.dataset.agent; st.enabled.has(id) ? st.enabled.delete(id) : st.enabled.add(id);
+  renderConns(); applyFilters();
+});
+function setStatus(id, status, label, note) {
+  Object.assign(st.conns[id], { status, label, note }); renderConns(); updateBanner();
+}
+function updateBanner() {
+  const refused = AGENTS.filter(a => st.conns[a.id]?.status === "refused");
+  const b = $("banner");
+  if (refused.length === AGENTS.length) {
+    b.hidden = false;
+    b.innerHTML = `<b>Can't connect to the agents.</b> Either your sign-in has expired (reload the page), or your account
+      isn't on the agents' debug viewer list (ask ${esc(ADMIN)}), or the agents are offline.`;
+  } else b.hidden = true;
+}
+function connect(a) {
+  const c = st.conns[a.id] ||= { since: 0, boot: "", retry: 0, opened: false };
+  setStatus(a.id, c.opened ? "reconnecting" : "connecting", c.opened ? "reconnecting" : "connecting");
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/${a.id}/debug/ws?since=${c.since}&boot=${c.boot}`);
+  c.ws = ws;
+  ws.onmessage = e => {
+    let ev; try { ev = JSON.parse(e.data); } catch { return; }
+    if (ev.kind === "hello") {
+      c.opened = true; c.retry = 0;
+      if (ev.boot !== c.boot) { c.boot = ev.boot; c.since = 0; }
+      setStatus(a.id, "live", "catching up", `signed in as ${ev.viewer}`);
+      return;
+    }
+    if (ev.kind === "live") { setStatus(a.id, "live", "live", st.conns[a.id].note); return; }
+    if (ev.kind === "ping") return;
+    if (ev.id) c.since = Math.max(c.since, ev.id);
+    ev._key = `${a.id}:${c.boot}:${ev.id}`;
+    if (st.seen.has(ev._key)) return;
+    st.seen.add(ev._key);
+    st.paused ? queue(ev) : ingest(ev);
+  };
+  ws.onclose = () => {
+    const delay = Math.min(30000, 1000 * 2 ** c.retry++);
+    if (c.opened) setStatus(a.id, "reconnecting", "reconnecting", "connection dropped; retrying");
+    else setStatus(a.id, "refused", "not connected", "handshake refused: sign-in expired, not a viewer, or agent offline");
+    setTimeout(() => connect(a), delay);
+  };
+}
+
+// ---------- model ----------
+function ingest(ev) {
+  if (ev.turn) {
+    const key = `${ev.agent}:${ev.turn}`;
+    let t = st.items.get(key);
+    if (!t) {
+      t = { type: "turn", key, agent: ev.agent, ts: ev.ts, events: [], node: null };
+      addItem(t);
+    }
+    t.events.push(ev);
+    updateTurn(t, ev);
+  } else if (ev.kind === "log") {
+    // consecutive loose log lines from one agent share a group
+    const lastKey = st.order[st.order.length - 1];
+    let g = st.items.get(lastKey);
+    if (!g || g.type !== "logs" || g.agent !== ev.agent || g.events.length >= 50 || ev.ts - g.last > 120) {
+      g = { type: "logs", key: `logs:${ev._key}`, agent: ev.agent, ts: ev.ts, last: ev.ts, events: [], node: null };
+      addItem(g);
+    }
+    g.events.push(ev); g.last = ev.ts;
+    updateLogs(g, ev);
+  }
+  $("empty").hidden = st.order.length > 0;
+}
+function addItem(item) {
+  st.items.set(item.key, item); st.order.push(item.key);
+  item.node = item.type === "turn" ? turnNode(item) : logsNode(item);
+  item.node.dataset.ts = item.ts;
+  // newest first; backlogs from three agents arrive one after another, so place by time
+  const after = [...$("list").children].find(n => +n.dataset.ts < item.ts);
+  $("list").insertBefore(item.node, after || null);
+  while (st.order.length > MAX_ITEMS) {
+    const old = st.items.get(st.order.shift()); old?.node.remove(); st.items.delete(old?.key);
+  }
+  renderConns();
+}
+function queue(ev) {
+  st.queued.push(ev);
+  const b = $("newer"); b.style.display = "block"; b.textContent = `${st.queued.length} new events — show`;
+}
+function flush() {
+  const q = st.queued; st.queued = []; q.forEach(ingest);
+  $("newer").style.display = "none";
+}
+$("newer").onclick = () => { st.paused = false; $("pause").classList.remove("on"); $("pause").textContent = "Pause"; flush(); };
+
+// ---------- turns ----------
+function turnNode(t) {
+  const d = document.createElement("details");
+  d.className = "turn"; d.style.setProperty("--agent", agentColor(t.agent));
+  d.innerHTML = `<summary></summary><div class="steps"></div>`;
+  t.steps = d.querySelector(".steps"); t.toolRows = {};
+  return d;
+}
+function facts(t) {
+  const f = { start: null, end: null, triage: null, route: null, models: [], tools: [], results: {}, warns: 0, errs: 0, memory: null };
+  for (const e of t.events) {
+    if (e.kind === "turn.start") f.start = e;
+    else if (e.kind === "turn.end") f.end = e;
+    else if (e.kind === "triage") f.triage = e;
+    else if (e.kind === "route") f.route = e;
+    else if (e.kind === "memory") f.memory = e;
+    else if (e.kind === "model") f.models.push(e);
+    else if (e.kind === "tool.call") f.tools.push(e);
+    else if (e.kind === "tool.result") { if (["error", "blocked"].includes(e.status)) f.errs++; }
+    else if (e.kind === "log") { if (e.level === "WARNING") f.warns++; if (LEVELS[e.level] >= 3) f.errs++; }
+  }
+  if (f.end?.error) f.errs++;
+  return f;
+}
+function narrative(f) {
+  const bits = [];
+  if (f.triage) {
+    if (f.triage.action === "answer") bits.push(`${modelName(f.triage.model)} answered straight away`);
+    else if (f.triage.action === "work") bits.push(`${modelName(f.triage.model)} handed off${f.triage.tier ? " to " + f.triage.tier : ""}`);
+    else if (f.triage.action === "skipped") bits.push(`first responder skipped (${f.triage.error || "error"})`);
+  }
+  if (f.memory?.chars) bits.push(`recalled ${(f.memory.text.match(/^- /gm) || []).length} memories`);
+  if (f.models.length) {
+    const names = [...new Set(f.models.map(m => modelName(m.model)))].join(", ");
+    bits.push(`${names} thought ${f.models.length}×`);
+  }
+  if (f.tools.length) {
+    const counts = {}; f.tools.forEach(c => counts[toolName(c.name)] = (counts[toolName(c.name)] || 0) + 1);
+    bits.push("used " + Object.entries(counts).map(([n, c]) => c > 1 ? `${n} ×${c}` : n).join(", "));
+  }
+  if (f.end) {
+    if (f.end.error) bits.push(`failed: ${f.end.error}`);
+    else if (f.end.suppressed) bits.push(`no reply (${f.end.suppressed})`);
+    else if (f.end.reply) bits.push(`replied “${cut(f.end.reply.replace(/_[^_]*AI agent[^_]*_/g, ""), 120)}”`);
+  }
+  return bits.join(" → ");
+}
+function updateTurn(t, ev) {
+  const f = facts(t); t.f = f;
+  const s = f.start || {};
+  const name = AGENTS.find(a => a.id === t.agent)?.name || t.agent;
+  const status = f.end ? (f.end.error ? `<span class="chip err">error</span>` : f.end.suppressed ? `<span class="chip warn">${esc(f.end.suppressed)}</span>`
+    : `<span class="chip ok">replied</span>`) : `<span class="chip busy">working</span>`;
+  const tier = f.end?.tier || f.route?.tier;
+  const cost = f.end?.cost ?? (f.models.reduce((a, m) => a + (m.cost || 0), 0) + (f.triage?.cost || 0));
+  const toolChips = [...new Set(f.tools.map(c => toolName(c.name)))].slice(0, 6).map(n => `<span class="chip">🔧 ${esc(n)}</span>`).join("");
+  t.node.querySelector("summary").innerHTML = `
+    <span class="chev">▸</span>
+    <span class="who">${CHANNEL_ICON[s.channel] || "•"} ${esc(s.user || (t.events[0].conv || "").split(":")[0] || "system")}
+      <span class="msg">— ${esc(cut(s.text || t.events[0].conv, 140))}</span></span>
+    <span class="meta">${time(t.ts)}${f.end?.ms != null ? " · " + secs(f.end.ms) : ""}</span>
+    <span class="line2"><span class="chip agent">${name}</span>${status}
+      ${tier ? `<span class="chip">${esc(tier)}${f.models[0] ? " · " + esc(modelName(f.models[f.models.length - 1].model)) : ""}</span>` : ""}
+      ${cost ? `<span class="chip">${money(cost)}</span>` : ""}${toolChips}
+      ${f.warns ? `<span class="chip warn">${f.warns} warning${f.warns > 1 ? "s" : ""}</span>` : ""}
+      ${f.errs ? `<span class="chip err">${f.errs} problem${f.errs > 1 ? "s" : ""}</span>` : ""}</span>
+    <span class="sum">${esc(narrative(f))}</span>`;
+  addStep(t, ev);
+  t.text = t.events.map(e => [e.text, e.user, e.name, e.msg, e.reply, e.content, JSON.stringify(e.args || "")].join(" ")).join(" ").toLowerCase();
+  applyFilter(t);
+}
+function step(icon, ts, summary, bodyHtml, cls = "") {
+  const d = document.createElement("details");
+  d.className = "step " + cls;
+  d.innerHTML = `<summary><span class="ico">${icon}</span><span class="t">${time(ts)}</span><span class="s">${summary}</span></summary>
+    <div class="body">${bodyHtml || "<em>No more detail.</em>"}</div>`;
+  return d;
+}
+const block = (title, text, cls = "") => text ? `<h4>${title}</h4><pre class="${cls}">${esc(text)}</pre>` : "";
+function addStep(t, e) {
+  let node;
+  switch (e.kind) {
+    case "turn.start":
+      node = step(CHANNEL_ICON[e.channel] || "📨", e.ts, `<b>${esc(e.user || "Someone")}</b> via ${esc(e.channel)}${e.verified === false ? " (unverified)" : ""}: ${esc(cut(e.text, 200))}`,
+        block("Message", e.text) + block("Details", pretty({ conversation: e.conv, user_id: e.user_id, phone: e.phone, verified: e.verified })));
+      break;
+    case "memory":
+      node = step("🧠", e.ts, `Recalled ${(String(e.text || "").match(/^- /gm) || []).length} memories (${e.chars} chars)`, block("Recalled", e.text));
+      break;
+    case "triage":
+      node = step("⚡", e.ts, e.action === "skipped" ? `First responder skipped: ${esc(e.error)}` :
+        `First responder (${esc(modelName(e.model))}, ${secs(e.ms)}): <b>${esc(e.action)}</b>${e.tier ? " → " + esc(e.tier) : ""}${e.ack ? ` — said “${esc(cut(e.ack, 80))}”` : ""}`,
+        block("Answer", e.text) + block("Acknowledgement", e.ack) + block("Raw", pretty({ action: e.action, tier: e.tier, cost: e.cost, ms: e.ms })),
+        e.action === "skipped" ? "bad" : "");
+      break;
+    case "route":
+      node = step("🧭", e.ts, `Routed to <b>${esc(e.tier)}</b> · ${esc(modelName(e.model))}${e.reasons?.length ? " (" + esc(e.reasons.join(", ")) + ")" : ""}`,
+        block("Model", e.model) + block("Why", (e.reasons || []).join("\n")));
+      break;
+    case "model": {
+      const calls = (e.tool_uses || []).map(u => toolName(u.name));
+      const think = e.reasoning || (calls.length ? e.text : "");
+      const lead = think ? `💭 “${esc(cut(think, 140))}”` : e.text ? `“${esc(cut(e.text, 140))}”` : "";
+      node = step("🤖", e.ts, `${esc(modelName(e.model))} · ${tok(e.input)}→${tok(e.output)} tok${e.cache_read ? ` (${tok(e.cache_read)} cached)` : ""} · ${secs(e.ms)} · ${money(e.cost)}
+        ${calls.length ? ` → <b>${esc(calls.join(", "))}</b>` : e.stop === "max_tokens" ? " · <b>cut off</b>" : ""} ${lead}`,
+        block("Reasoning", e.reasoning, "thought") + block(calls.length ? "Thinking out loud" : "Reply", e.text, calls.length ? "thought" : "")
+        + (calls.length ? block("Tool calls", pretty(e.tool_uses)) : "") + block("Call", pretty({ model: e.model, tier: e.tier, stop: e.stop, input: e.input, output: e.output, cache_read: e.cache_read })),
+        e.stop === "max_tokens" ? "bad" : "");
+      break;
+    }
+    case "tool.call": {
+      const args = Object.entries(e.args || {}).map(([k, v]) => `${k}=${cut(typeof v === "string" ? v : JSON.stringify(v), 40)}`).join(", ");
+      node = step("🔧", e.ts, `<b>${esc(toolName(e.name))}</b>(${esc(cut(args, 160))}) <span class="pending">…</span>${e.confirmed ? " (confirmed by user)" : ""}`,
+        block("Arguments", pretty(e.args || {})));
+      (t.toolRows[e.name] ||= []).push(node);
+      break;
+    }
+    case "tool.result": {
+      const row = (t.toolRows[e.name] || []).shift();
+      const bad = ["error", "blocked"].includes(e.status);
+      if (row) {
+        const p = row.querySelector(".pending");
+        if (p) p.outerHTML = `→ <b style="color:var(--${bad ? "err" : e.status === "ok" ? "ok" : "warn"})">${esc(e.status)}</b>${e.ms != null ? " · " + secs(e.ms) : ""}`;
+        row.querySelector(".body").insertAdjacentHTML("beforeend", block(`Result (${esc(e.status)})`, pretty(e.content)));
+        if (bad) row.classList.add("bad");
+        return;
+      }
+      node = step("📦", e.ts, `${esc(toolName(e.name))} → ${esc(e.status)}`, block("Result", pretty(e.content)), bad ? "bad" : "");
+      break;
+    }
+    case "turn.end":
+      node = step(e.error ? "💥" : e.suppressed ? "🔇" : "✅", e.ts,
+        e.error ? `Failed: ${esc(e.error)}` : e.suppressed ? `No reply (${esc(e.suppressed)})` :
+        `Replied · ${esc(e.tier || "")} · ${money(e.cost)} · ${secs(e.ms)}${e.escalations?.length ? " · escalated: " + esc(e.escalations.join(", ")) : ""}`,
+        block("Reply", e.reply) + block("Summary", pretty({ tier: e.tier, cost: e.cost, ms: e.ms, tools: e.tools, escalations: e.escalations })),
+        e.error ? "bad" : "");
+      break;
+    case "log":
+      node = logStep(e);
+      break;
+    default:
+      node = step("•", e.ts, esc(e.kind), block("Event", pretty(e)));
+  }
+  t.steps.append(node);
+}
+function logStep(e) {
+  const n = step(e.level === "ERROR" ? "⛔" : e.level === "WARNING" ? "⚠️" : "·", e.ts,
+    `<span style="opacity:.75">${esc(e.logger.replace("agentcore.", ""))}</span> ${esc(cut(e.msg, 220))}`,
+    block("Log line", `${e.level} ${e.logger}\n${e.msg}`), `log lvl-${e.level}`);
+  n.dataset.level = e.level;
+  return n;
+}
+
+// ---------- loose logs ----------
+function logsNode(g) {
+  const d = document.createElement("details");
+  d.className = "loose"; d.style.borderLeft = `4px solid ${agentColor(g.agent)}`;
+  d.innerHTML = `<summary></summary><div class="steps"></div>`;
+  g.steps = d.querySelector(".steps");
+  return d;
+}
+function updateLogs(g, e) {
+  const name = AGENTS.find(a => a.id === g.agent)?.name || g.agent;
+  const worst = g.events.reduce((m, x) => Math.max(m, LEVELS[x.level] ?? 1), 0);
+  g.worst = worst;
+  const lastMsg = cut(g.events[g.events.length - 1].msg, 120);
+  g.node.querySelector("summary").innerHTML = `<span class="chev">▸</span><span class="chip agent" style="--agent:${agentColor(g.agent)}">${name}</span>
+    <span style="white-space:nowrap">${g.events.length} log line${g.events.length > 1 ? "s" : ""}</span>
+    ${worst >= 3 ? `<span class="chip err">error</span>` : worst === 2 ? `<span class="chip warn">warning</span>` : ""}
+    <span class="s" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(lastMsg)}</span>
+    <span class="meta" style="margin-left:auto">${time(g.ts)}${g.last - g.ts > 1 ? "–" + time(g.last) : ""}</span>`;
+  g.steps.append(logStep(e));
+  g.text = g.events.map(x => x.msg + " " + x.logger).join(" ").toLowerCase();
+  applyFilter(g);
+}
+
+// ---------- filters ----------
+function applyFilter(item) {
+  const lvl = LEVELS[st.level];
+  let show = st.enabled.has(item.agent);
+  if (show && st.q) show = (item.text || "").includes(st.q);
+  if (item.type === "logs") {
+    if (st.show === "turns") show = false;
+    if (show) show = item.worst >= lvl && (st.show !== "problems" || item.worst >= 2);
+    item.steps.querySelectorAll(".step.log").forEach(n => n.hidden = (LEVELS[n.dataset.level] ?? 1) < lvl);
+  } else {
+    if (show && st.show === "problems") show = (item.f?.errs || 0) + (item.f?.warns || 0) > 0;
+    item.steps.querySelectorAll(".step.log").forEach(n => n.hidden = (LEVELS[n.dataset.level] ?? 1) < lvl);
+  }
+  item.node.hidden = !show;
+}
+function applyFilters() { st.items.forEach(applyFilter); }
+let qTimer;
+$("q").addEventListener("input", e => { clearTimeout(qTimer); qTimer = setTimeout(() => { st.q = e.target.value.trim().toLowerCase(); applyFilters(); }, 150); });
+$("show").onchange = e => { st.show = e.target.value; applyFilters(); };
+$("level").onchange = e => { st.level = e.target.value; applyFilters(); };
+$("pause").onclick = e => {
+  st.paused = !st.paused; e.target.classList.toggle("on", st.paused); e.target.textContent = st.paused ? "Paused" : "Pause";
+  if (!st.paused) flush();
+};
+$("collapse").onclick = () => document.querySelectorAll("details[open]").forEach(d => d.open = false);
+$("theme").onclick = () => {
+  const root = document.documentElement;
+  const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("agent-debug-theme", root.dataset.theme); } catch {}
+};
+try { const th = localStorage.getItem("agent-debug-theme"); if (th) document.documentElement.dataset.theme = th; } catch {}
+
+renderConns();
+async function loadConfig() {
+  const wanted = new URLSearchParams(location.search).get("agents");
+  let cfg = {};
+  try { const r = await fetch("config.json", { cache: "no-store" }); if (r.ok) cfg = await r.json(); } catch {}
+  AGENTS = (cfg.agents || []).filter(a => a && /^[a-z0-9-]+$/.test(a.id));
+  if (wanted) AGENTS = wanted.split(",").filter(id => /^[a-z0-9-]+$/.test(id))
+    .map(id => AGENTS.find(a => a.id === id) || { id, name: id[0].toUpperCase() + id.slice(1) });
+  if (cfg.admin) ADMIN = cfg.admin;
+  const css = (sel, key) => `${sel} { ${AGENTS.filter(a => a[key]).map(a => `--agent-${a.id}: ${a[key]};`).join(" ")} }`;
+  const style = document.createElement("style");
+  style.textContent = [css(":root", "color"), `@media (prefers-color-scheme: dark) { ${css(':root:not([data-theme="light"])', "dark")} }`,
+                       css(':root[data-theme="dark"]', "dark")].join("\n");
+  document.head.appendChild(style);
+  st.enabled = new Set(AGENTS.map(a => a.id));
+  if (!AGENTS.length) $("empty").textContent = "No agents configured: add config.json beside this page, or ?agents=id1,id2.";
+  renderConns();
+}
+loadConfig().then(() => AGENTS.forEach(connect));
+</script>
+</body>
+</html>

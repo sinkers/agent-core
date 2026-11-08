@@ -1,0 +1,33 @@
+{{- if .Values.global.ingress.enabled }}
+# Only the Teams messaging endpoint and the debug websocket (its own sign-in check, debug.py) are routed;
+# /internal/* stays inside the cluster.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "agent.name" . }}
+  labels: {{- include "agent.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.global.ingress.className }}
+  rules:
+    - {{- with .Values.global.ingress.host }}
+      host: {{ . }}
+      {{- end }}
+      http:
+        paths:
+          - path: /{{ .Values.agentName }}/api/messages
+            pathType: Exact
+            backend:
+              service: {name: {{ include "agent.name" . }}, port: {name: http}}
+          {{- if .Values.global.debug.cognitoClientId }}
+          - path: /{{ .Values.agentName }}/debug/ws
+            pathType: Exact
+            backend:
+              service: {name: {{ include "agent.name" . }}, port: {name: http}}
+          {{- end }}
+          {{- range .Values.extraIngressPaths }}
+          - path: /{{ $.Values.agentName }}/{{ .path }}
+            pathType: {{ .pathType | default "Exact" }}
+            backend:
+              service: {name: {{ include "agent.name" $ }}, port: {name: http}}
+          {{- end }}
+{{- end }}

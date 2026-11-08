@@ -1,0 +1,43 @@
+# Probe: a test agent built from agent-core alone (no organisation's files), used to check a fresh build end to
+# end and as the guinea pig for scale-to-zero work. Chat only (POST /internal/chat): no Teams, email, Jira,
+# phone or memory, so it needs nothing but Bedrock, Postgres and (optionally) SearXNG.
+agent:
+  name: probe
+  display_name: Probe (AI test)
+  role: Test agent
+  owner: Agent owner
+  owner_email: owner@example.com
+  upn: probe@example.com
+  enabled: true
+models:
+  region: ap-southeast-2
+  prompt_caching: true
+  triage: true
+  tiers:
+    fast:    {model_id: au.anthropic.claude-haiku-4-5-20251001-v1:0, max_tokens: 1024}
+    default: {model_id: au.anthropic.claude-sonnet-5, max_tokens: 4096}
+    deep:    {model_id: au.anthropic.claude-opus-5-5, max_tokens: 4096}
+budget:
+  daily_usd: 5
+  monthly_usd: 30
+  alert_at: 0.8
+skills:
+  on_demand: [office-documents]  # a core skill, to check the built-in pack loads
+mcp_servers:
+  web:      {url: inprocess://web}
+  files:    {url: inprocess://files}
+  schedule: {url: inprocess://schedule}
+  history:  {url: inprocess://history}
+tools:
+  max_steps: 12
+  allow:
+    - {server: web, name: web_search}
+    - {server: web, name: read_web_page}
+    - {server: files, name: create_file}
+    - {server: files, name: file_outline}
+    - {server: schedule, name: schedule_task, writes: true, scope_args: [deliver_to]}
+    - {server: schedule, name: list_scheduled_tasks}
+    - {server: schedule, name: cancel_scheduled_task, writes: true}
+    - {server: schedule, name: start_background_task, writes: true}
+memory:
+  enabled: false

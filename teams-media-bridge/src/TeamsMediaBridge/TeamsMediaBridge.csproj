@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>TeamsMediaBridge</RootNamespace>
+    <AssemblyName>TeamsMediaBridge</AssemblyName>
+    <!--
+      The Real-time Media Platform (Microsoft.Skype.Bots.Media) ships native x64 Windows binaries only.
+      The managed code compiles anywhere, but the process can only run on Windows Server x64.
+      https://learn.microsoft.com/en-us/microsoftteams/platform/bots/calls-and-meetings/requirements-considerations-application-hosted-media-bots
+    -->
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <!-- The media SDK is published as a "-preview" package; NuGet warns about prerelease deps. -->
+    <NoWarn>$(NoWarn);NU5104;CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Microsoft requires the newest Calls.Media package or one no more than three months old;
+      older builds stop working. Bump these together (same 1.2.0.x build number) at least quarterly.
+      Calls.Media 1.2.0.18736 pulls Microsoft.Skype.Bots.Media 1.33.0.258-preview for net8.0.
+    -->
+    <PackageReference Include="Microsoft.Graph.Communications.Calls.Media" Version="1.2.0.18736" />
+    <PackageReference Include="Microsoft.Graph.Communications.Calls" Version="1.2.0.18736" />
+    <PackageReference Include="Microsoft.Graph.Communications.Client" Version="1.2.0.18736" />
+    <PackageReference Include="Microsoft.Graph.Communications.Common" Version="1.2.0.18736" />
+    <PackageReference Include="Microsoft.Skype.Bots.Media" Version="1.33.0.258-preview" />
+
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+  </ItemGroup>
+
+</Project>

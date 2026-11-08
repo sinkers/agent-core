@@ -1,0 +1,5 @@
+apiVersion: v2
+name: agent-platform
+description: Shared parts for agent-core deployments (Postgres, Hindsight memory, kill switch, MCP servers, SearXNG), as named templates
+type: library
+version: 0.1.0

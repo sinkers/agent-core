@@ -1,0 +1,21 @@
+# OpenShell provider profile: an agent's memory-proxy token. The sandbox sees a placeholder in HINDSIGHT_API_KEY;
+# the supervisor's proxy puts the real token in the Authorization header, and only for memory-proxy, only from the
+# worker's Python.
+id: agentcore-memory
+display_name: agent-core memory
+description: Per-agent token for memory-proxy (Hindsight behind a bank-pinning proxy)
+category: other
+credentials:
+  - name: api_key
+    description: The agent's memory-proxy token
+    env_vars: [HINDSIGHT_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+endpoints:
+  - host: memory-proxy.memory.svc.cluster.local
+    port: 8080
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries: [/usr/local/bin/python3.12]

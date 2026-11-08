@@ -1,0 +1,12 @@
+agentName: ""      # the agent's key, e.g. ada (set by the parent chart's alias values)
+replicas: 1
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  # 4Gi: opening big CAD drawings (a 43 MB DXF needs well over 1Gi; dxf.py runs it in a capped child process)
+  limits: {memory: 4Gi}
+# Secret holding DB_PASSWORD, INTERNAL_API_TOKEN, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# and, once registered, MICROSOFT_APP_ID / MICROSOFT_APP_PASSWORD / MICROSOFT_APP_TENANT_ID.
+secretName: ""     # default agent-<agentName>
+# Extra public paths under /<agentName>/ (the Teams messages path is always routed).
+extraIngressPaths: []   # e.g. [{path: api/calls, pathType: Exact}]
+extraEnv: {}

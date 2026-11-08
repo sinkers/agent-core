@@ -1,0 +1,153 @@
+# Example agent for the core's tests, modelled on a project-manager style agent.
+agent:
+  name: dan
+  display_name: Dan (AI)
+  role: Document Controller
+  owner: A. Owner
+  owner_email: owner@acme.example
+  upn: dan@acme.example
+  enabled: true
+models:
+  region: ap-southeast-2
+  prompt_caching: true
+  triage: true
+  tiers:
+    fast:
+      model_id: au.anthropic.claude-haiku-4-5-20251001-v1:0
+      max_tokens: 1024
+    default:
+      model_id: au.anthropic.claude-sonnet-5
+      max_tokens: 8192
+    deep:
+      model_id: au.anthropic.claude-opus-5-5
+      max_tokens: 8192
+  escalation:
+    max_tool_steps: 8
+    urgency_terms:
+    - urgent
+    - important
+    - pressing
+    - asap
+    - high priority
+    class1_doc_types:
+    - REQ
+    - RDS
+    - BOD
+    class1_terms:
+    - class 1
+    - protection
+    - earthing
+    - hv
+    - fire
+    - structural
+    - pressure system
+    - safety in design
+budget:
+  daily_usd: 5
+  monthly_usd: 60
+  alert_at: 0.8
+skills:
+  always:
+  - plain-voice
+  on_demand:
+  - house-style
+mailbox:
+  enabled: true
+  poll_seconds: 60
+jira_watch:
+  enabled: true
+mcp_servers:
+  web:
+    url: inprocess://web
+  attachments:
+    url: inprocess://attachments
+  openclaw:
+    url_env: OPENCLAW_MCP_URL
+  files:
+    url: inprocess://files
+  schedule:
+    url: inprocess://schedule
+  mail:
+    url: http://mcp-mail-dan/mcp/
+  jira:
+    url: http://mcp-jira-dan/mcp/
+tools:
+  max_steps: 60
+  allow:
+  - server: web
+    name: web_search
+  - server: web
+    name: read_web_page
+  - server: attachments
+    name: list_attachments
+  - server: attachments
+    name: read_attachment
+  - server: attachments
+    name: view_attachment
+  - server: openclaw
+    name: search_docs
+  - server: openclaw
+    name: sharepoint_get
+  - server: openclaw
+    name: sharepoint_put
+    writes: true
+    sites:
+    - 3.0 Projects
+    site_args:
+    - site
+    confirm_overwrite_arg: overwrite
+    paths:
+    - 1. Project Delivery/PRJ-1/01 Concept Design/Concept A/PRJ-GEN-REG-0005_*.xlsx
+    - 1. Project Delivery/PRJ-1/*/Working/*
+  - server: files
+    name: file_outline
+  - server: files
+    name: edit_file
+  - server: files
+    name: create_file
+  - server: files
+    name: preview_file
+  - server: files
+    name: save_file_to_sharepoint
+    writes: true
+  - server: files
+    name: send_file
+    writes: true
+  - server: schedule
+    name: schedule_task
+    writes: true
+    scope_args:
+    - deliver_to
+  - server: schedule
+    name: list_scheduled_tasks
+  - server: schedule
+    name: cancel_scheduled_task
+    writes: true
+  - server: mail
+    name: send_email
+    writes: true
+    scope_args:
+    - to
+    - cc
+  - server: mail
+    name: send_email_external
+    writes: true
+    confirm: true
+  - server: jira
+    name: search_issues
+  - server: jira
+    name: get_issue
+  - server: jira
+    name: count_issues
+  - server: jira
+    name: list_fields
+  - server: jira
+    name: jira_get
+  - server: jira
+    name: find_user
+  - server: jira
+    name: add_comment
+    writes: true
+  standing_rules: []
+memory:
+  enabled: true

@@ -1,0 +1,7 @@
+kubeconfig
+.k3s-token
+.known_hosts
+.last-tag
+poc.env
+poc-results.jsonl
+memory/.bucket

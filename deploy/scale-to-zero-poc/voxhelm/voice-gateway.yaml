@@ -1,0 +1,40 @@
+# voxhelm's voice-gateway in the PoC cluster, for text chat only: the front door connects to it as Probe (one
+# socket per voxhelm user), so Probe shows online while asleep. Voice needs a real DEEPGRAM_API_KEY and LiveKit;
+# these placeholders only satisfy its start-up checks. No auth gateway and no ingress: reachable inside the
+# cluster only (see docs/plans/scale-to-zero.md, section 7, for the fixes needed before exposing it).
+apiVersion: v1
+kind: Namespace
+metadata: {name: voxhelm}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: voice-gateway, namespace: voxhelm, labels: {app: voice-gateway}}
+spec:
+  replicas: 1  # in-memory session state: one replica only (its known limit)
+  selector: {matchLabels: {app: voice-gateway}}
+  template:
+    metadata: {labels: {app: voice-gateway}}
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}  # distroless nonroot
+      containers:
+        - name: voice-gateway
+          image: ${VG_IMAGE}
+          ports: [{containerPort: 8080, name: http}]
+          env:
+            - {name: PORT, value: "8080"}
+            - {name: DEEPGRAM_API_KEY, value: unused-text-chat-only}
+            - {name: LIVEKIT_URL, value: ws://127.0.0.1:7880}
+            - {name: LIVEKIT_API_KEY, value: unused}
+            - {name: LIVEKIT_API_SECRET, value: unused-text-chat-only-placeholder}
+          readinessProbe: {tcpSocket: {port: http}, periodSeconds: 2}
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {memory: 256Mi}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: voice-gateway, namespace: voxhelm}
+spec:
+  selector: {app: voice-gateway}
+  ports: [{port: 8080, targetPort: http, name: http}]

@@ -1,0 +1,9 @@
+dependencies:
+- name: agent-platform
+  repository: file://../agent-platform
+  version: 0.1.0
+- name: agent
+  repository: file://../agent
+  version: 0.1.0
+digest: sha256:eddb03a17ac7f7aababa96a12ff670da9f4b0f873adfe36620c960f5cb7ed922
+generated: "2026-10-20T21:28:48.876906+11:00"

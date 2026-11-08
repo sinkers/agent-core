@@ -1,0 +1,15 @@
+apiVersion: v2
+name: agent-core-test
+description: The test agent (Probe) on agent-core, with Postgres and SearXNG
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: agent-platform
+    version: 0.1.0
+    repository: file://../../charts/agent-platform
+  - name: agent
+    alias: probe
+    version: 0.1.0
+    repository: file://../../charts/agent
+    condition: probe.enabled

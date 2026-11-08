@@ -1,0 +1,9 @@
+dependencies:
+- name: agent-platform
+  repository: file://../../charts/agent-platform
+  version: 0.1.0
+- name: agent
+  repository: file://../../charts/agent
+  version: 0.1.0
+digest: sha256:c5e22e9c0d62c1020924bcdf8d08d9dfd099cc5d717b3d4b5589b3d6984dd176
+generated: "2026-11-02T07:34:24.94474+11:00"

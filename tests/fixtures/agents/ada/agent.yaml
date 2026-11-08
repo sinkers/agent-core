@@ -1,0 +1,408 @@
+# Example agent for the core's tests, modelled on a project-manager style agent.
+agent:
+  name: ada
+  display_name: Ada (AI)
+  role: Project Manager
+  owner: A. Owner
+  owner_email: owner@acme.example
+  upn: ada@acme.example
+  enabled: true
+models:
+  region: ap-southeast-2
+  prompt_caching: true
+  triage: true
+  tiers:
+    fast:
+      model_id: au.anthropic.claude-haiku-4-5-20251001-v1:0
+      max_tokens: 1024
+    default:
+      model_id: au.anthropic.claude-sonnet-5
+      max_tokens: 24000
+    deep:
+      model_id: au.anthropic.claude-opus-5-5
+      max_tokens: 24000
+    frontier:
+      model_id: global.anthropic.claude-fable-5-1
+      max_tokens: 24000
+  escalation:
+    max_tool_steps: 8
+    urgency_terms:
+    - urgent
+    - important
+    - pressing
+    - asap
+    - high priority
+    class1_doc_types:
+    - REQ
+    - RDS
+    - BOD
+    class1_terms:
+    - class 1
+    - protection
+    - earthing
+    - hv
+    - fire
+    - structural
+    - pressure system
+    - safety in design
+budget:
+  daily_usd: 80
+  monthly_usd: 2400
+  alert_at: 0.8
+skills:
+  always:
+  - plain-voice
+  on_demand:
+  - today-board
+  - house-style
+primer:
+  site: 3.0 Projects
+  folder: Agents/ada-memory
+  always:
+  - 00-index.md
+  - 10-context.md
+  on_demand:
+  - 50-links.md
+  refresh_minutes: 60
+directory: true
+jira_watch:
+  enabled: true
+mailbox:
+  enabled: true
+  poll_seconds: 60
+mcp_servers:
+  web:
+    url: inprocess://web
+  library:
+    url: inprocess://library
+  calendar:
+    url: inprocess://calendar
+  mail:
+    url: http://mcp-mail-ada/mcp/
+  attachments:
+    url: inprocess://attachments
+  voice:
+    url: inprocess://voice
+  method:
+    url: inprocess://method
+  files:
+    url: inprocess://files
+  brand:
+    url: inprocess://brand
+  plan:
+    url: inprocess://plan
+  openclaw:
+    url_env: OPENCLAW_MCP_URL
+  schedule:
+    url: inprocess://schedule
+  history:
+    url: inprocess://history
+  phone:
+    url: inprocess://phone
+  jira:
+    url: http://mcp-jira-ada/mcp/
+  confluence:
+    url: http://mcp-confluence-ada/mcp/
+  escalation:
+    url: inprocess://escalation
+  teams:
+    url: inprocess://teams
+escalation:
+  enabled: true
+  count_channels:
+  - teams
+  - email
+  - jira
+  - phone
+  chases_before_warning: 3
+  min_channels: 2
+  min_hours_between_chases: 20
+  window_days: 14
+  warning_channels:
+  - teams
+  - email
+  grace_hours: 24
+  email_to:
+  - owner@acme.example
+  cc_people_listed: true
+  teams_chat_id: null
+  require_approval: true
+  approvers:
+  - name: A. Owner
+    email: owner@acme.example
+    aad_id: 7575b8dd-54e1-411a-b4ca-799dfa249c8e
+    jira_account_id: 712020:6ca53785-025b-4d45-a6ec-fdc2bd55d278
+  record_days: 90
+  exempt: []
+  sweep_cron: 0 9 * * 1-5
+tools:
+  allow:
+  - server: web
+    name: web_search
+  - server: web
+    name: read_web_page
+  - server: library
+    name: list_references
+  - server: library
+    name: search_references
+  - server: library
+    name: read_reference
+  - server: calendar
+    name: list_my_meetings
+  - server: calendar
+    name: schedule_meeting
+    writes: true
+    scope_args:
+    - attendees
+  - server: calendar
+    name: cancel_meeting
+    writes: true
+    confirm: true
+  - server: mail
+    name: send_email
+    writes: true
+    scope_args:
+    - to
+    - cc
+  - server: mail
+    name: send_email_external
+    writes: true
+    confirm: true
+  - server: attachments
+    name: list_attachments
+  - server: attachments
+    name: read_attachment
+  - server: attachments
+    name: view_attachment
+  - server: voice
+    name: set_speaking_speed
+  - server: files
+    name: create_file
+  - server: files
+    name: edit_file
+  - server: files
+    name: file_outline
+  - server: files
+    name: preview_file
+  - server: files
+    name: insert_image
+  - server: brand
+    name: make_deck
+  - server: brand
+    name: make_one_pager
+  - server: files
+    name: send_file
+    writes: true
+  - server: files
+    name: attach_to_jira
+    writes: true
+  - server: files
+    name: email_file
+    writes: true
+    scope_args:
+    - to
+    - cc
+  - server: files
+    name: save_file_to_sharepoint
+    writes: true
+  - server: plan
+    name: make_plan
+    writes: true
+    confirm_when_arg: replace_edited
+  - server: plan
+    name: export_plan
+  - server: plan
+    name: import_project_xml
+  - server: plan
+    name: plan_to_jira
+    writes: true
+    confirm_when_arg: apply
+  - server: plan
+    name: plan_to_confluence
+    writes: true
+  - server: plan
+    name: publish_plan
+    writes: true
+  - server: plan
+    name: edit_plan
+    writes: true
+    confirm_when_arg: replace_edited
+  - server: plan
+    name: get_plan
+  - server: plan
+    name: list_plans
+  - server: plan
+    name: plan_overview
+  - server: plan
+    name: plan_deliverables
+  - server: plan
+    name: plan_map_deliverables
+  - server: plan
+    name: plan_gate_pack
+  - server: method
+    name: method_versions
+  - server: method
+    name: method_search
+  - server: method
+    name: method_page
+  - server: method
+    name: method_template
+  - server: method
+    name: method_changes
+  - server: openclaw
+    name: search_docs
+  - server: openclaw
+    name: sharepoint_get
+  - server: openclaw
+    name: sharepoint_put
+    writes: true
+    sites:
+    - 3.0 Projects
+    - 4.0 Operations
+    site_args:
+    - site
+    confirm_overwrite_arg: overwrite
+  - server: openclaw
+    name: sharepoint_move
+    writes: true
+    confirm: true
+    sites:
+    - 3.0 Projects
+    - 4.0 Operations
+    site_args:
+    - src_site
+    - dest_site
+  - server: openclaw
+    name: sharepoint_delete
+    writes: true
+    confirm: true
+    sites:
+    - 3.0 Projects
+    - 4.0 Operations
+    site_args:
+    - site
+  - server: schedule
+    name: schedule_task
+    writes: true
+    scope_args:
+    - deliver_to
+  - server: schedule
+    name: list_scheduled_tasks
+  - server: schedule
+    name: cancel_scheduled_task
+    writes: true
+  - server: schedule
+    name: start_background_task
+    writes: true
+  - server: history
+    name: list_my_calls
+  - server: history
+    name: get_call_transcript
+  - server: phone
+    name: register_my_phone
+    writes: true
+  - server: phone
+    name: forget_my_phone
+    writes: true
+  - server: phone
+    name: take_messam
+    writes: true
+  - server: phone
+    name: call_person
+    writes: true
+    scope_args:
+    - person
+  - server: jira
+    name: search_issues
+  - server: jira
+    name: get_issue
+  - server: jira
+    name: list_transitions
+  - server: jira
+    name: find_user
+  - server: jira
+    name: count_issues
+  - server: jira
+    name: list_fields
+  - server: jira
+    name: jira_get
+  - server: jira
+    name: create_issue
+    writes: true
+  - server: jira
+    name: update_issue
+    writes: true
+  - server: jira
+    name: add_comment
+    writes: true
+  - server: jira
+    name: transition_issue
+    writes: true
+  - server: jira
+    name: link_issues
+    writes: true
+  - server: jira
+    name: rank_issues
+    writes: true
+  - server: jira
+    name: timeline_audit
+  - server: jira
+    name: resolve_issue
+    writes: true
+    confirm: true
+  - server: escalation
+    name: chase
+    writes: true
+  - server: escalation
+    name: chase_status
+  - server: escalation
+    name: warn
+    writes: true
+  - server: escalation
+    name: escalate
+  - server: escalation
+    name: send_escalation
+    writes: true
+  - server: escalation
+    name: close_chase
+    writes: true
+  - server: teams
+    name: find_person
+  - server: teams
+    name: send_teams_messam
+    writes: true
+    scope_args:
+    - to
+  - server: confluence
+    name: search_pages
+  - server: confluence
+    name: get_page
+  - server: confluence
+    name: list_spaces
+  - server: confluence
+    name: create_page
+    writes: true
+  - server: confluence
+    name: add_comment
+    writes: true
+  - server: confluence
+    name: update_page
+    writes: true
+    confirm: true
+  standing_rules: []
+  max_steps: 60
+voice:
+  enabled: true
+  polly_voice: Brian
+  elevenlabs_voice_id: aGkVQvWUZi16EH8aZJvT
+  elevenlabs_model: eleven_flash_v2_5
+  polly_engine: neural
+  language: en-AU
+  max_call_minutes: 60
+  wake_words:
+  - Denis
+  - Dennys
+  - Dennies
+memory:
+  enabled: true
+  shared_across_team: true

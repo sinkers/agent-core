@@ -1,0 +1,35 @@
+# The test agent (charts/example with Probe instead of Ada). Image tag and namespace come from deploy.sh.
+# Secrets: agent-probe (DB_PASSWORD, INTERNAL_API_TOKEN, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) and
+# agents-postgres-admin (password), both made by deploy.sh.
+global:
+  agents: [probe]
+  partOf: agent-core-test
+  labelDomain: agent-core.test
+  awsRegion: ap-southeast-2
+  image:
+    repository: docker.io/library/agent-core-test
+    tag: dev
+    pullPolicy: IfNotPresent
+  environment: test
+  killswitchConfigMap: agents-killswitch
+  ingress:
+    enabled: false
+killswitch:
+  probe: run
+postgres:
+  enabled: true
+  image: postgres:17-alpine
+  storage: 2Gi
+  adminSecret: agents-postgres-admin
+hindsight:
+  enabled: false
+searxng:
+  enabled: true
+  image: searxng/searxng:2026.10.2-19ffbcd30
+mcpServers: []
+probe:
+  enabled: true
+  agentName: probe
+  resources:
+    requests: {cpu: 50m, memory: 192Mi}
+    limits: {memory: 1Gi}

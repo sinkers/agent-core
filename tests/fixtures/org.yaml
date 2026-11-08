@@ -1,0 +1,24 @@
+# The example organisation the core's tests run as (org.py). A real deployment keeps its own org.yaml.
+name: Acme
+timezone: Australia/Hobart
+place: Hobart
+windows_timezone: Tasmania Standard Time
+holidays: tas-south
+holidays_label: Tasmanian holidays
+register_keeper: Dan
+internal_domains: [acme.example, acme.example.net]
+agent_mailboxes: [ada@acme.example, eve@acme.example, dan@acme.example]
+website: example.com
+country_code: "61"
+call_hours: [7, 21]
+user_agent: "acme-agents/1.0 (+https://example.com)"
+sharepoint_url: https://acme.sharepoint.com
+apps_url: https://apps.example.com
+jira_url: https://acme.atlassian.net
+admin: A. Owner
+admin_first: Alex
+method:
+  repo: https://github.com/example/method.git
+  doc_number: ACME-GEN-RPT-0001
+  approved_site: https://apps.example.com/method/
+  draft_site: https://apps.example.com/method-dev/

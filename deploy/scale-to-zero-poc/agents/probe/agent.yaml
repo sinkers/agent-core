@@ -1,0 +1,42 @@
+# Probe for the scale-to-zero PoC: the test agent as a worker in an OpenShell sandbox. Its sandbox may reach Bedrock
+# (re-signed by the proxy) and the front door's work API, nothing else (policies/probe-worker.yaml), so it has only
+# the tools that need neither: scheduling and its own history.
+agent:
+  name: probe
+  display_name: Probe (AI test)
+  role: Test agent
+  owner: Agent owner  # the PoC sets the real one (AGENT_OWNER, from poc.env)
+  owner_email: owner@example.com
+  upn: probe@example.com
+  enabled: true
+  chat_footer: false  # Telegram and voxhelm already show Probe as an AI agent
+models:
+  region: ap-southeast-2
+  prompt_caching: true
+  triage: false
+  tiers:
+    fast:    {model_id: au.anthropic.claude-haiku-4-5-20251001-v1:0, max_tokens: 1024}
+    default: {model_id: au.anthropic.claude-sonnet-5, max_tokens: 4096}
+    deep:    {model_id: au.anthropic.claude-opus-5-5, max_tokens: 4096}
+budget:
+  daily_usd: 5
+  monthly_usd: 30
+  alert_at: 0.8
+skills:
+  on_demand: []
+mcp_servers:
+  schedule: {url: inprocess://schedule}
+  history:  {url: inprocess://history}
+tools:
+  max_steps: 8
+  allow:
+    - {server: schedule, name: schedule_task, writes: true, scope_args: [deliver_to]}
+    - {server: schedule, name: list_scheduled_tasks}
+    - {server: schedule, name: cancel_scheduled_task, writes: true}
+    - {server: schedule, name: start_background_task, writes: true}
+memory:
+  enabled: true
+  bank_id: poc-probe            # must match the bank memory-proxy pins Probe's token to
+  # Probe is a one-owner test agent reached by Telegram and voxhelm under different ids: one shared memory lets a call
+  # remember a chat. A multi-person agent keeps this false (private per person) until ids are linked to people.
+  shared_across_team: true

@@ -1,0 +1,49 @@
+# Bedrock on-demand prices, USD per million tokens, ap-southeast-2 (Sydney).
+#
+# Source: AWS Pricing API, service AmazonBedrockFoundationModels, regionCode
+# ap-southeast-2, queried 2026-09-29. `au.` profiles bill at the regional rate,
+# which is 10% above the `global.` rate.
+#
+# `verified: false` means the model was not in the Pricing API on that date and the
+# figure is the Anthropic list price plus the 10% AU regional premium. Confirm against
+# the AWS console before relying on budget alerts for that model.
+models:
+  au.anthropic.claude-haiku-4-5-20251001-v1:0:
+    input: 1.10
+    output: 5.50
+    cache_read: 0.11
+    cache_write: 1.375
+  au.anthropic.claude-sonnet-5:
+    input: 3.30
+    output: 16.50
+    cache_read: 0.33
+    cache_write: 4.125
+    verified: false
+  au.anthropic.claude-opus-5-5:
+    input: 5.50
+    output: 27.50
+    cache_read: 0.55
+    cache_write: 6.875
+    verified: false
+  global.anthropic.claude-fable-5-1:
+    input: 10.00
+    output: 50.00
+    cache_read: 0.25
+    cache_write: 12.50
+  # OpenAI on Bedrock (independent reviewers, review.py). No prompt caching for these.
+  openai.gpt-oss-120b-1:0:
+    input: 0.1545
+    output: 0.618
+  global.openai.gpt-6.1-sol:
+    # Not in the Pricing API on 1 Oct 2026; GPT-6 Astra's global price used as a cautious estimate.
+    input: 10.00
+    output: 50.00
+    verified: false
+  global.openai.gpt-6-astra:
+    input: 10.00
+    output: 50.00
+  global.xai.grok-4.7:
+    # Not matched by name in the Pricing API on 1 Oct 2026; estimate.
+    input: 5.00
+    output: 25.00
+    verified: false

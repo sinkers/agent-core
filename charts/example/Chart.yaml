@@ -1,0 +1,15 @@
+apiVersion: v2
+name: agents
+description: An example deployment of agent-core with one agent (Ada) and the shared parts; copy it for your own
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: agent-platform
+    version: 0.1.0
+    repository: file://../agent-platform
+  - name: agent
+    alias: ada
+    version: 0.1.0
+    repository: file://../agent
+    condition: ada.enabled

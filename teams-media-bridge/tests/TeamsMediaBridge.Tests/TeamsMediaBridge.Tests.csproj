@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Unit tests for the platform-independent parts of the bridge. The source files are linked rather than
+    referencing the app project, because the app is x64/Windows-only (Real-time Media Platform) while these
+    tests should run anywhere, including a developer Mac.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../../src/TeamsMediaBridge/Options.cs" Link="Linked/Options.cs" />
+    <Compile Include="../../src/TeamsMediaBridge/Relay/FrameQueue.cs" Link="Linked/FrameQueue.cs" />
+    <Compile Include="../../src/TeamsMediaBridge/Relay/MeetingGate.cs" Link="Linked/MeetingGate.cs" />
+    <Compile Include="../../src/TeamsMediaBridge/Relay/AgentSessionClient.cs" Link="Linked/AgentSessionClient.cs" />
+    <Compile Include="../../src/TeamsMediaBridge/Relay/SpeakerTracker.cs" Link="Linked/SpeakerTracker.cs" />
+    <Compile Include="../../src/TeamsMediaBridge/Relay/Reconnect.cs" Link="Linked/Reconnect.cs" />
+    <Compile Include="../../src/TeamsMediaBridge/Bot/MeetingJoinUrl.cs" Link="Linked/MeetingJoinUrl.cs" />
+    <Compile Include="../../src/TeamsMediaBridge/Http/GraphHttp.cs" Link="Linked/GraphHttp.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Graph models (ChatInfo, OrganizerMeetingInfo, ...) + SetTenantId extension; pure managed. -->
+    <PackageReference Include="Microsoft.Graph.Communications.Core" Version="1.2.0.18736" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>

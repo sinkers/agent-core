@@ -1,0 +1,42 @@
+# CloudNativePG: one primary and two replicas, one per node (docs/plans/scale-to-zero.md, section 3).
+# Databases: openshell (the OpenShell gateway) and agents (the agent store, reached only by the front door).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: pg
+  namespace: platform
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  primaryUpdateStrategy: unsupervised
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
+  storage:
+    size: 5Gi
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: required
+  resources:
+    requests: {memory: 256Mi, cpu: 100m}
+    limits: {memory: 1Gi}
+  bootstrap:
+    initdb:
+      database: agents
+      owner: frontdoor
+  managed:
+    roles:
+      - name: openshell
+        ensure: present
+        login: true
+        passwordSecret: {name: pg-openshell}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: openshell
+  namespace: platform
+spec:
+  cluster: {name: pg}
+  name: openshell
+  owner: openshell

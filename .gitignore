@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+dist/
+charts/example/charts/
+teams-media-bridge/**/bin/
+teams-media-bridge/**/obj/
+teams-media-bridge/out/
+teams-media-bridge/*.zip
+deploy/test-agent/charts/

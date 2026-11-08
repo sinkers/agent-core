@@ -1,0 +1,64 @@
+[project]
+name = "agent-core"
+version = "0.1.0"
+description = "An engine for AI team agents that work alongside people: Teams, email, phone, Jira, GitHub"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "boto3>=1.35",
+    "pydantic>=2.9",
+    "pyyaml>=6.0",
+    "psycopg[binary,pool]>=3.2",
+    "httpx>=0.27",
+    "pyjwt[crypto]>=2.9",
+    "mcp>=2.2,<3",
+    "prometheus-client>=0.21",
+    "amazon-transcribe>=0.6",
+    "croniter>=2.0",
+    # Reading documents the agents are sent (documents.py)
+    "python-docx>=1.1",
+    "pypdf>=5.0",
+    "openpyxl>=3.1",
+    # Rich-text email: agents write Markdown, recipients get formatted HTML (emailfmt.py)
+    "markdown>=3.6",
+    # Reading images people send (images.py): normalise and downscale for the model
+    "pillow>=10.0",
+    # Seeing drawings: render PDF pages as images (images.py, attachments.view_attachment)
+    "pypdfium2>=4.30",
+    "python-pptx>=1.0",
+    # CAD drawings: read DXF (ASCII or binary) and draw its sheets (dxf.py)
+    "ezdxf>=1.3",
+    "matplotlib>=3.8",
+    # Vector art: render SVG the agents draw (vector.py); prebuilt wheels, no system libraries
+    "resvg-py>=0.5",
+    "opentelemetry-sdk>=1.28",
+    "opentelemetry-exporter-otlp-proto-http>=1.28",
+]
+
+
+[project.urls]
+Repository = "https://github.com/sinkers/agent-core"
+Issues = "https://github.com/sinkers/agent-core/issues"
+[project.optional-dependencies]
+test = ["pytest>=8.3", "pytest-asyncio>=0.24"]
+# The scale-to-zero front door's OpenShell launcher (frontdoor/launcher.py)
+frontdoor = ["openshell==0.1.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentcore", "src/agentcore_mcp_jira", "src/agentcore_mcp_mail", "src/agentcore_mcp_confluence", "src/agentcore_mcp_pipedrive"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# The skill pack (plugins/agent-skills) ships inside the package so every deployment gets it (skills.py)
+"plugins/agent-skills/skills" = "agentcore/builtin_skills"

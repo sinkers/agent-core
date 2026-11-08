@@ -1,0 +1,21 @@
+# voxhelm's voice-gateway for the PoC cluster (linux/amd64). Its own Dockerfile targets arm64; this builds the same
+# thing for amd64 from its source folder without changing it:
+#   docker buildx build --platform linux/amd64 -f Dockerfile.voice-gateway <path to voxhelm/voice-gateway>
+FROM golang:1.25-bookworm AS builder
+WORKDIR /app
+RUN apt-get update -q && apt-get install -y --no-install-recommends libopus-dev libopusfile-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /voice-gateway ./cmd/gateway
+
+FROM gcr.io/distroless/cc-debian12:nonroot
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libopus.so.0* /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libogg.so.0* /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libopusfile.so.0* /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /voice-gateway /voice-gateway
+EXPOSE 8080
+USER nonroot:nonroot
+ENTRYPOINT ["/voice-gateway"]
